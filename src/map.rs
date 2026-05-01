@@ -32,12 +32,8 @@
 //! This means the integer part of a world coordinate is the map cell index,
 //! and the fractional part is the position within that cell.
 
-/// The game map as an array of strings.
-///
-/// Each string is one row of the map. The character at `MAP[y][x]` determines
-/// what occupies that cell:
-/// - `#` - Solid wall (blocks movement and rays)
-/// - `.` - Empty space (player can walk through, rays pass through)
+/// The game map as an array of strings. Each character determines what occupies
+/// that cell: `#` for a solid wall, `.` for empty space.
 ///
 /// The map is 8×8 cells, surrounded by walls on all four edges to prevent
 /// the player from escaping into an undefined area. The interior contains
@@ -56,78 +52,21 @@
 ///   ↑
 ///   Y (rows)
 /// ```
-///
-/// To visualize this as a top-down view, each `#` is a wall block and each
-/// `.` is floor space the player can walk on. The inner walls at columns
-/// 3-4 in rows 2 and 5 form two obstacles in the middle of the room.
 pub const MAP: [&str; 8] = [
-    "########",
-    "#......#",
-    "#..##..#",
-    "#......#",
-    "#......#",
-    "#..##..#",
-    "#......#",
-    "########",
+    "########", "#......#", "#..##..#", "#......#", "#......#", "#..##..#", "#......#", "########",
 ];
 
 /// Number of columns (X dimension) in the [`MAP`].
-///
-/// This equals the length of each row string. Used for boundary checks
-/// in [`is_wall()`] to determine if a coordinate falls outside the map.
 pub const MAP_WIDTH: usize = 8;
 
 /// Number of rows (Y dimension) in the [`MAP`].
-///
-/// This equals the number of strings in the [`MAP`] array. Used for
-/// boundary checks in [`is_wall()`] to determine if a coordinate falls
-/// outside the map.
 pub const MAP_HEIGHT: usize = 8;
 
 /// Checks whether a point in world coordinates is inside a wall.
 ///
-/// This is the core collision detection function used by both the player
-/// movement code (to prevent walking through walls) and the raycasting
-/// algorithm (to find where rays hit).
-///
-/// # How It Works
-///
-/// 1. **Convert to map coordinates**: Takes the floor of each world coordinate
-///    to find which map cell the point falls in. For example, world position
-///    `(2.7, 3.2)` maps to cell `(2, 3)`.
-///
-/// 2. **Boundary check**: If the resulting map coordinates are outside the
-///    valid range `[0, MAP_WIDTH)` × `[0, MAP_HEIGHT)`, the function returns
-///    `true` - treating out-of-bounds areas as walls. This prevents the player
-///    from escaping the map and rays from indexing into invalid memory.
-///
-/// 3. **Cell lookup**: Accesses `MAP[my][mx]` and checks if the byte at that
-///    position equals `b'#'`. Using `.as_bytes()` avoids allocating a String
-///    and accesses the underlying UTF-8 bytes directly.
-///
-/// # Arguments
-///
-/// * `x` - World X coordinate (continuous, not cell index).
-/// * `y` - World Y coordinate (continuous, not cell index).
-///
-/// # Returns
-///
-/// `true` if the point is inside a wall cell or outside the map bounds,
-/// `false` if it's in an empty space cell.
-///
-/// # Examples
-///
-/// ```
-/// // Standing in the middle of cell (2, 1) - that's a '.' cell
-/// assert!(!is_wall(2.5, 1.5));
-///
-/// // Standing at the edge of cell (0, 0) - that's a '#' cell
-/// assert!(is_wall(0.5, 0.5));
-///
-/// // Outside the map - treated as wall
-/// assert!(is_wall(-1.0, 2.0));
-/// assert!(is_wall(10.0, 2.0));
-/// ```
+/// Converts world coordinates to discrete map cell indices using `floor()`,
+/// then looks up the cell in [`MAP`]. Out-of-bounds positions are treated
+/// as walls to prevent the player from escaping and ensure rays always hit.
 pub fn is_wall(x: f32, y: f32) -> bool {
     // Convert continuous world coordinates to discrete map cell indices.
     // floor() ensures that positions 2.0 through 2.999... all map to cell 2.
@@ -141,8 +80,58 @@ pub fn is_wall(x: f32, y: f32) -> bool {
         return true;
     }
 
-    // Look up the character in the map. We use as_bytes() to get the raw UTF-8
-    // bytes without allocating a String, then index directly. Since the map only
-    // contains ASCII characters (# and .), each character is exactly one byte.
     MAP[my as usize].as_bytes()[mx as usize] == b'#'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_walls() {
+        assert!(is_wall(0.5, 0.5));
+        assert!(is_wall(7.5, 0.5));
+        assert!(is_wall(3.5, 2.5));
+        assert!(is_wall(4.5, 2.5));
+        assert!(is_wall(3.5, 5.5));
+        assert!(is_wall(4.5, 5.5));
+    }
+
+    #[test]
+    fn known_open_cells() {
+        assert!(!is_wall(1.5, 1.5));
+        assert!(!is_wall(3.5, 3.5));
+        assert!(!is_wall(6.5, 6.5));
+        assert!(!is_wall(1.5, 3.5));
+        assert!(!is_wall(5.5, 4.5));
+    }
+
+    #[test]
+    fn out_of_bounds_is_wall() {
+        assert!(is_wall(-0.01, 1.5));
+        assert!(is_wall(1.5, -0.01));
+        assert!(is_wall(8.0, 1.5));
+        assert!(is_wall(1.5, 8.0));
+        assert!(is_wall(-1.0, -1.0));
+        assert!(is_wall(99.0, 99.0));
+    }
+
+    #[test]
+    fn floor_semantics() {
+        assert!(!is_wall(2.0, 2.0));
+        assert!(!is_wall(2.999, 2.0));
+        assert!(is_wall(3.0, 2.0));
+        assert!(!is_wall(1.999, 1.999));
+        assert!(!is_wall(2.999, 1.999));
+        assert!(!is_wall(2.999, 3.999));
+        assert!(is_wall(3.0, 5.0));
+    }
+
+    #[test]
+    fn map_dimensions_sanity() {
+        assert_eq!(MAP.len(), MAP_HEIGHT);
+        assert!(MAP.iter().all(|r| r.len() == MAP_WIDTH));
+        assert_eq!(MAP_WIDTH, 8);
+        assert_eq!(MAP_HEIGHT, 8);
+    }
 }

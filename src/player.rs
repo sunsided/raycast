@@ -36,16 +36,6 @@ use crate::map::is_wall;
 /// in **world space** where each map cell is 1×1 unit. A player at `(2.5, 3.0)`
 /// is in the middle of column 2, at the top edge of row 3.
 ///
-/// # Coordinate System
-///
-/// - **X axis**: Increases to the right (east). Column 0 is the leftmost column.
-/// - **Y axis**: Increases downward (south). Row 0 is the topmost row.
-/// - **Angle**: In radians, measured counter-clockwise from the positive X axis.
-///   - `0.0` → facing east (right)
-///   - `π/2` → facing north (up)
-///   - `π` → facing west (left)
-///   - `3π/2` → facing south (down)
-///
 /// # Why `f32`?
 ///
 /// `f32` is used instead of `f64` because:
@@ -54,85 +44,34 @@ use crate::map::is_wall;
 /// 2. `f32` operations are faster on most hardware, especially GPUs.
 /// 3. The `pixels` crate and most game engines use `f32` throughout.
 pub struct Player {
-    /// X coordinate in world space.
-    ///
-    /// Must be within `[0, MAP_WIDTH]` to be on the map. Values outside this
-    /// range mean the player is out of bounds (which shouldn't happen during
-    /// normal play due to collision detection in [`move_forward`]).
+    /// X coordinate in world space. Must be within `[0, MAP_WIDTH]`.
     pub x: f32,
 
-    /// Y coordinate in world space.
-    ///
-    /// Must be within `[0, MAP_HEIGHT]` to be on the map. Same constraints
-    /// and guarantees as [`x`](Player::x).
+    /// Y coordinate in world space. Must be within `[0, MAP_HEIGHT]`.
     pub y: f32,
 
     /// Viewing direction in radians.
     ///
-    /// Measured counter-clockwise from the positive X axis (east).
-    /// The angle is **not** normalized to `[0, 2π)` - it can grow
+    /// Measured counter-clockwise from the positive X axis (east):
+    /// - `0.0` → facing east (right)
+    /// - `π/2` → facing north (up)
+    /// - `π` → facing west (left)
+    /// - `3π/2` → facing south (down)
+    ///
+    /// The angle is **not** normalized to `[0, 2π)` — it can grow
     /// indefinitely through repeated turning. This is intentional and safe
     /// because `sin()` and `cos()` handle any input value correctly, and
     /// normalizing would add unnecessary computation per frame.
-    ///
-    /// Note that Rust's trigonometric functions use radians, not degrees.
-    /// To convert: `degrees * π / 180 = radians`.
     pub angle: f32,
 }
 
 /// Moves the player forward in their current viewing direction.
 ///
-/// This is the primary movement function. It decomposes the player's angle
-/// into a direction vector, scales it by the movement amount, then applies
-/// movement on each axis independently with collision detection.
-///
-/// # How It Works
-///
-/// 1. **Direction vector**: Computes `(cos(angle), sin(angle))` to get the
-///    unit direction the player is facing.
-///
-/// 2. **Scale by amount**: Multiplies the direction by the movement amount
-///    (e.g., `0.05` units per frame) to get the displacement `(dx, dy)`.
-///
-/// 3. **X-axis collision**: Checks if `player.x + dx` would place the player
-///    inside a wall. If not, applies the X displacement. If it would hit a
-///    wall, the X movement is cancelled but Y is still attempted.
-///
-/// 4. **Y-axis collision**: Same as X but for the Y axis. This independence
-///    is what creates the "wall sliding" effect - you can move along a wall
-///    even when pressing diagonally toward it.
-///
-/// # Sliding Collision Explained
-///
-/// Consider the player at `(2.0, 2.0)` facing northeast toward a wall at
-/// column 3. With the old "all-or-nothing" collision, the player wouldn't
-/// move at all. With sliding collision:
-/// - X movement is blocked (wall ahead)
-/// - Y movement succeeds (no wall in Y direction)
-/// - Result: player slides along the wall in the Y direction
-///
-/// This feels much more natural to players and is the standard approach
-/// in first-person games.
-///
-/// # Arguments
-///
-/// * `player` - Mutable reference to the player to move.
-/// * `amount` - Distance to move in world units. Positive values move forward,
-///   negative values move backward (though [`move_backward`] is preferred for
-///   clarity).
-///
-/// # Example
-///
-/// ```
-/// // Player at (2.0, 2.0) facing east (angle = 0.0)
-/// let mut player = Player { x: 2.0, y: 2.0, angle: 0.0 };
-/// move_forward(&mut player, 0.5);
-/// // Player is now at approximately (2.5, 2.0) - moved along X only
-/// ```
+/// Converts the player's angle to a direction vector using `cos()`/`sin()`,
+/// then applies movement on each axis independently with collision detection.
+/// The independent-axis check is what enables wall-sliding behavior: if one
+/// axis is blocked by a wall, the other axis still moves.
 pub fn move_forward(player: &mut Player, amount: f32) {
-    // Compute the displacement vector from the player's facing angle.
-    // cos(angle) gives the X component, sin(angle) gives the Y component.
-    // This produces a unit vector (length = 1.0) that we scale by `amount`.
     let dx = player.angle.cos() * amount;
     let dy = player.angle.sin() * amount;
 
@@ -150,46 +89,158 @@ pub fn move_forward(player: &mut Player, amount: f32) {
 }
 
 /// Moves the player backward, opposite to their current viewing direction.
-///
-/// Implemented as [`move_forward`] with a negated amount. This is purely
-/// for API clarity - callers can express intent ("move backward") without
-/// having to remember to pass a negative value.
-///
-/// # Arguments
-///
-/// * `player` - Mutable reference to the player to move.
-/// * `amount` - Distance to move backward (always positive; it's negated internally).
+/// Delegates to [`move_forward`] with a negated amount.
 pub fn move_backward(player: &mut Player, amount: f32) {
     move_forward(player, -amount);
 }
 
 /// Rotates the player counter-clockwise (to the left).
 ///
-/// Decreases the player's angle, which rotates the viewing direction
-/// counter-clockwise on the 2D plane. In a standard mathematical
-/// coordinate system (Y up), this would be the positive rotation
-/// direction. However, since our screen has Y increasing downward,
-/// the visual effect is a counter-clockwise turn.
-///
-/// # Arguments
-///
-/// * `player` - Mutable reference to the player to rotate.
-/// * `amount` - Rotation amount in radians. For example, `0.03` radians
-///   is approximately `1.7°`.
+/// Decreases the player's angle, rotating counter-clockwise on the 2D plane.
+/// Note: because the screen coordinate system has Y increasing downward, the
+/// visual effect appears counter-clockwise to the player.
 pub fn turn_left(player: &mut Player, amount: f32) {
     player.angle -= amount;
 }
 
-/// Rotates the player clockwise (to the right).
-///
-/// Increases the player's angle, rotating the viewing direction clockwise.
-/// This is the inverse of [`turn_left`].
-///
-/// # Arguments
-///
-/// * `player` - Mutable reference to the player to rotate.
-/// * `amount` - Rotation amount in radians. Should typically match the
-///   value used for [`turn_left`] for consistent turning speed.
+/// Rotates the player clockwise (to the right). Inverse of [`turn_left`].
 pub fn turn_right(player: &mut Player, amount: f32) {
     player.angle += amount;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::{MAP_HEIGHT, MAP_WIDTH};
+    use std::f32::consts::PI;
+
+    const EPS: f32 = 1e-3;
+
+    #[test]
+    fn turn_left_decreases_angle() {
+        let mut p = Player {
+            x: 2.0,
+            y: 2.0,
+            angle: 0.0,
+        };
+        turn_left(&mut p, 0.1);
+        assert!((p.angle - (-0.1)).abs() < EPS);
+    }
+
+    #[test]
+    fn turn_right_increases_angle() {
+        let mut p = Player {
+            x: 2.0,
+            y: 2.0,
+            angle: 0.0,
+        };
+        turn_right(&mut p, 0.1);
+        assert!((p.angle - 0.1).abs() < EPS);
+    }
+
+    #[test]
+    fn turn_left_right_inverse() {
+        let mut p = Player {
+            x: 2.0,
+            y: 2.0,
+            angle: 0.5,
+        };
+        turn_left(&mut p, 0.3);
+        turn_right(&mut p, 0.3);
+        assert!((p.angle - 0.5).abs() < EPS);
+    }
+
+    #[test]
+    fn turning_does_not_move() {
+        let mut p = Player {
+            x: 2.5,
+            y: 3.7,
+            angle: 0.0,
+        };
+        turn_left(&mut p, 1.0);
+        assert!((p.x - 2.5).abs() < EPS);
+        assert!((p.y - 3.7).abs() < EPS);
+        turn_right(&mut p, 2.0);
+        assert!((p.x - 2.5).abs() < EPS);
+        assert!((p.y - 3.7).abs() < EPS);
+    }
+
+    #[test]
+    fn move_forward_along_positive_x() {
+        let mut p = Player {
+            x: 1.5,
+            y: 1.5,
+            angle: 0.0,
+        };
+        move_forward(&mut p, 0.05);
+        assert!((p.x - 1.55).abs() < EPS);
+        assert!((p.y - 1.5).abs() < EPS);
+    }
+
+    #[test]
+    fn move_forward_blocked_by_wall() {
+        let mut p = Player {
+            x: 1.5,
+            y: 1.5,
+            angle: PI,
+        };
+        let old_x = p.x;
+        move_forward(&mut p, 10.0);
+        assert!((p.x - old_x).abs() < EPS);
+    }
+
+    #[test]
+    fn move_forward_sliding_collision() {
+        let mut p = Player {
+            x: 2.5,
+            y: 2.5,
+            angle: PI / 4.0,
+        };
+        move_forward(&mut p, 1.0);
+        assert!((p.x - 2.5).abs() < EPS);
+        let expected_y = 2.5 + (PI / 4.0).sin();
+        assert!((p.y - expected_y).abs() < EPS);
+    }
+
+    #[test]
+    fn move_backward_is_negative_forward() {
+        let mut p1 = Player {
+            x: 3.0,
+            y: 3.0,
+            angle: 0.5,
+        };
+        let mut p2 = Player {
+            x: 3.0,
+            y: 3.0,
+            angle: 0.5,
+        };
+        move_forward(&mut p1, -0.05);
+        move_backward(&mut p2, 0.05);
+        assert!((p1.x - p2.x).abs() < EPS);
+        assert!((p1.y - p2.y).abs() < EPS);
+        assert!((p1.angle - p2.angle).abs() < EPS);
+    }
+
+    #[test]
+    fn move_keeps_player_in_map_property() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut p = Player {
+            x: 4.0,
+            y: 4.0,
+            angle: 0.0,
+        };
+        let step = 0.05;
+        for i in 0..100u64 {
+            let mut h = DefaultHasher::new();
+            i.hash(&mut h);
+            let seed = h.finish() as f32;
+            let angle = seed * 0.1;
+            p.angle = angle;
+            move_forward(&mut p, step);
+            assert!(p.x >= 0.0 && p.x < MAP_WIDTH as f32, "x={}", p.x);
+            assert!(p.y >= 0.0 && p.y < MAP_HEIGHT as f32, "y={}", p.y);
+        }
+    }
 }
