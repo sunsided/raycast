@@ -1,0 +1,15 @@
+[package]
+name = "raycast"
+version = "0.1.0"
+edition = "2024"
+authors = ["Markus Mayer <widemeadows@gmail.com>"]
+description = "A classic raycasting engine with Wolfenstein 3D-style first-person rendering"
+license = "EUPL-1.2"
+publish = false
+repository = "https://github.com/sunsided/raycast"
+categories = ["game-engines", "graphics", "rendering::engine"]
+keywords = ["raycasting", "raycaster", "wolfenstein", "ddm", "game"]
+
+[dependencies]
+pixels = "0.17"
+winit = "0.30"
