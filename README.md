@@ -94,9 +94,9 @@ Edit `src/map.rs` to create your own layouts.
 
 ## Dependencies
 
-- **winit 0.30** — Cross-platform window creation and input
-- **pixels 0.17** — Simple GPU-accelerated 2D pixel renderer
+- **winit 0.30** - Cross-platform window creation and input
+- **pixels 0.17** - Simple GPU-accelerated 2D pixel renderer
 
 ## License
 
-This project is for educational purposes — a hands-on exploration of raycasting fundamentals in Rust.
+This project is for educational purposes - a hands-on exploration of raycasting fundamentals in Rust.
